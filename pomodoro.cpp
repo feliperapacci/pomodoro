@@ -5,103 +5,158 @@
 #include <sstream>
 #include <array>
 #include <unordered_map>
+#include <csignal>
+
+// For TUI
+#include <termios.h>
+#include <unistd.h>
 
 
 const int INTERVAL_TIME = 1;
-const int FONT_DIMENSION = 5;   // 5x5
+bool g_Running = 1;
+termios g_orig_termios; 
+
+
+
+
+// *****************************
+// *        TUI SETUP          *
+// *****************************
+
+
+void reset_termios() {
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_orig_termios);
+}
+
+void signal_handler(int sig) {
+    g_Running = 0;
+    exit(1);
+}
+                
+class TuiConfig {
+public:
+    TuiConfig() {
+        // COPIES ORIGINAL TERMIOS TO GLOBAL OBJ
+        tcgetattr(STDIN_FILENO, &g_orig_termios);
+        
+        // HANLDING EARLY EXITS AND UNEXPECTED TERMINATIONS
+        std::atexit(reset_termios);
+        std::signal(SIGINT, signal_handler);
+        std::signal(SIGTERM, signal_handler);
+        std::signal(SIGSEGV, signal_handler);
+
+        // Configuring terminal
+        termios raw_termios = g_orig_termios;
+        raw_termios.c_lflag &= ~(ECHO | ICANON /*| ISIG */ );
+        raw_termios.c_cc[VMIN] = 1;
+        raw_termios.c_cc[VTIME] = 0;
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw_termios);
+    }
+
+};
+
+
+
+// *****************************
+// *     FONT AND PRINTING     *
+// *****************************
+
+const int FONT_DIMENSION = 5;   // 6x5
 const std::array<std::array<std::string, 5>, 11> SYMBOLS {{
     // 5x5 ascii arts of each character in a digital clock [0-9:]
 
     // 0
     {
-        " ███ ",
-        "█   █",
-        "█   █",
-        "█   █",
-        " ███ "
+        "  ███ ",
+        " █   █",
+        " █   █",
+        " █   █",
+        "  ███ "
     },
     // 1
     {
-        "  █  ",
-        " ██  ",
-        "  █  ",
-        "  █  ",
-        " ███ "
+        "   █  ",
+        "  ██  ",
+        "   █  ",
+        "   █  ",
+        "  ███ "
     },
     // 2
     {
-        " ███ ",
-        "█   █",
-        "   █ ",
-        "  █  ",
-        "█████"
+        "  ███ ",
+        " █   █",
+        "    █ ",
+        "   █  ",
+        " █████"
     },
     // 3
     {
-        "████ ",
-        "    █",
-        " ███ ",
-        "    █",
-        "████ "
+        " ████ ",
+        "     █",
+        "  ███ ",
+        "     █",
+        " ████ "
     },
     // 4
     {
-        "█   █",
-        "█   █",
-        "█████",
-        "    █",
-        "    █"
+        " █   █",
+        " █   █",
+        " █████",
+        "     █",
+        "     █"
     },
     // 5
     {
-        "█████",
-        "█    ",
-        "████ ",
-        "    █",
-        "████ "
+        " █████",
+        " █    ",
+        " ████ ",
+        "     █",
+        " ████ "
     },
     // 6
     {
-        " ███ ",
-        "█    ",
-        "████ ",
-        "█   █",
-        " ███ "
+        "  ███ ",
+        " █    ",
+        " ████ ",
+        " █   █",
+        "  ███ "
     },
     // 7
     {
-        "█████",
-        "    █",
-        "   █ ",
-        "  █  ",
-        "  █  "
+        " █████",
+        "     █",
+        "    █ ",
+        "   █  ",
+        "   █  "
     },
     // 8
     {
-        " ███ ",
-        "█   █",
-        " ███ ",
-        "█   █",
-        " ███ "
+        "  ███ ",
+        " █   █",
+        "  ███ ",
+        " █   █",
+        "  ███ "
     },
     // 9
     {
-        " ███ ",
-        "█   █",
-        " ████",
-        "    █",
-        " ███ "
+        "  ███ ",
+        " █   █",
+        "  ████",
+        "     █",
+        "  ███ "
     },
     // :
     {
-        "     ",
-        "  █  ",
-        "     ",
-        "  █  ",
-        "     "
+        "      ",
+        "   █  ",
+        "      ",
+        "   █  ",
+        "      "
     }
 }};
-std::unordered_map<char, int> char_symbol_lut = 
+
+// a lookup table mapping the characters to their indices in SYMBOLS
+std::unordered_map<char, int> char_symbol_lut 
 {
     {'0', 0},
     {'1', 1},
@@ -118,43 +173,8 @@ std::unordered_map<char, int> char_symbol_lut =
 
 
 template <class Rep, class Period>
-void duration_to_string(const std::chrono::duration<Rep, Period> &duration, std::string &time_text);
-void print_digital_clock(std::string_view time);
-
-
-int main() {
-    
-    // now & end are of type std::chrono::time_point<std::chrono::steady_clock>
-    auto now = std::chrono::steady_clock::now();
-    auto end = now + std::chrono::seconds{ 10 };
-
-    // interval & time_remaining are of type std::chrono::duration<...>
-    auto interval = std::chrono::seconds{ INTERVAL_TIME };
-    auto time_remaining = end - now;
-
-    std::string time_text;
-
-
-    std::cout << "\033[2J"; // clears screen
-
-    
-    while (time_remaining.count() >= 1){
-        std::this_thread::sleep_until(now += interval);
-        time_remaining = end - now;
-        duration_to_string(time_remaining, time_text);
-
-        print_digital_clock(time_text);
-        // std::endl necessary to flush cout to stdout
-        std::cout << std::endl; 
-    }    
-
-    std::cout << "Done!\n";
-}
-
-template <class Rep, class Period>
 void duration_to_string(const std::chrono::duration<Rep, Period> &duration, std::string &time_text) {
 
-    std::cout << "\033[H";                                  // moves cursor to beginning
     
 #if __cplusplus >= 202002L                                  // this code for C++20 or later
     std::chrono::hh_mm_ss time { duration };
@@ -186,6 +206,8 @@ void print_digital_clock(std::string_view time) {
     // Will always print in hh:mm:ss format
     // Printing will be done row by row, so it will start by printing the top row of every character and go down until it prints the bottom row
 
+    std::cout << "\033[H";                                  // moves cursor to beginning
+
     for (int row = 0; row < FONT_DIMENSION; ++row) {
         for (char ch : time) {
             std::cout << SYMBOLS[char_symbol_lut[ch]][row];         
@@ -193,3 +215,46 @@ void print_digital_clock(std::string_view time) {
         std::cout << '\n';
     }
 }
+
+
+
+// *****************************
+// *          MAIN             *
+// *****************************
+
+int main() {
+    
+    // SETUP TUI
+    TuiConfig tuicfg;
+
+    // SELECT WORK TIME
+    
+    // SELECT REST TIME
+
+    // now & end are of type std::chrono::time_point<std::chrono::steady_clock>
+    auto now = std::chrono::steady_clock::now();
+    auto end = now + std::chrono::seconds{ 64 };
+
+    // interval & time_remaining are of type std::chrono::duration<...>
+    auto interval = std::chrono::seconds{ INTERVAL_TIME };
+    auto time_remaining = end - now;
+
+    std::string time_text;  // stores time to be printed in hh::mm:ss format
+
+
+    std::cout << "\033[2J"; // clears screen
+
+    
+    while (time_remaining.count() >= 1){
+        std::this_thread::sleep_until(now += interval);
+        time_remaining = end - now;
+        duration_to_string(time_remaining, time_text);
+
+        print_digital_clock(time_text);
+        // std::endl necessary to flush cout to stdout
+        std::cout << std::endl; 
+    }    
+
+    std::cout << "Done!\n";
+}
+
